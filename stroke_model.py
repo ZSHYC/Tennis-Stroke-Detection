@@ -3,7 +3,7 @@ import json
 import numpy as np
 import os
 from catboost import CatBoostRegressor
-
+from sklearn.metrics import roc_auc_score
 
 TRAIN_DIR = "data/train"
 if not os.path.exists(TRAIN_DIR):
@@ -29,35 +29,35 @@ def get_feature_cols(prev_window_num=PREV_WINDOW_NUM, after_window_num=AFTER_WIN
     return colnames
 
 def to_features(data, prev_window_num=PREV_WINDOW_NUM, after_window_num=AFTER_WINDOW_NUM):
-    eps = 1e-15
+    eps = 1e-15  # 防止除零错误
     data = data.copy()  # Create a copy of the DataFrame to avoid SettingWithCopyWarning
     for i in range(1, prev_window_num):
-        data.loc[:, 'x_lag_{}'.format(i)] = data['x'].shift(i)
+        data.loc[:, 'x_lag_{}'.format(i)] = data['x'].shift(i)  # 创建一个新列，存储Y坐标的滞后值（即前几个时间点的Y坐标值）  data.loc[:, column_name]表示选择所有行和指定列,   .shift(i)：将这一列的数据向下移动i行
         data.loc[:, 'y_lag_{}'.format(i)] = data['y'].shift(i)
-        data.loc[:, 'x_diff_{}'.format(i)] = data['x_lag_{}'.format(i)] - data['x']
+        data.loc[:, 'x_diff_{}'.format(i)] = data['x_lag_{}'.format(i)] - data['x']   # 计算当前点与滞后点的X坐标差值
         data.loc[:, 'y_diff_{}'.format(i)] = data['y_lag_{}'.format(i)] - data['y']
 
 
     for i in range(1, after_window_num):
-        data.loc[:, 'x_lag_inv_{}'.format(i)] = data['x'].shift(-i)
+        data.loc[:, 'x_lag_inv_{}'.format(i)] = data['x'].shift(-i)   # data['x'].shift(-i)：向上移动i行，获取未来的值    x_lag_inv_i, y_lag_inv_i: 存储未来i个时间步长的坐标值
         data.loc[:, 'y_lag_inv_{}'.format(i)] = data['y'].shift(-i) 
-        data.loc[:, 'x_diff_inv_{}'.format(i)] = data['x_lag_inv_{}'.format(i)] - data['x']
+        data.loc[:, 'x_diff_inv_{}'.format(i)] = data['x_lag_inv_{}'.format(i)] - data['x']        # x_lag_inv_i, y_lag_inv_i: 存储未来i个时间步长的坐标值，利用未来信息（仅在特征工程中使用，实际预测时不可用）
         data.loc[:, 'y_diff_inv_{}'.format(i)] = data['y_lag_inv_{}'.format(i)] - data['y']
 
 
     for i in range(1, after_window_num):
-        data.loc[:, 'x_div_{}'.format(i)] = data['x_diff_{}'.format(i)]/(data['x_diff_inv_{}'.format(i)] + eps)
+        data.loc[:, 'x_div_{}'.format(i)] = data['x_diff_{}'.format(i)]/(data['x_diff_inv_{}'.format(i)] + eps)    # （过去坐标 - 当前坐标）/ （未来坐标 - 当前坐标）
         data.loc[:, 'y_div_{}'.format(i)] = data['y_diff_{}'.format(i)]/(data['y_diff_inv_{}'.format(i)] + eps)
 
     for i in range(1, prev_window_num):
-        data = data[data['x_lag_{}'.format(i)].notna()]
+        data = data[data['x_lag_{}'.format(i)].notna()]     #  保留x_lag_i列中非空（not null and not NaN）的行，移除由于shift操作产生的空值行（因为shift操作会在开始或结尾产生NaN值）
         
     for i in range(1, after_window_num):
         data = data[data['x_lag_inv_{}'.format(i)].notna()]
     data = data[data['x'].notna()] 
     return data
 
-def __add_weight(pd_data, weight_map):
+def __add_weight(pd_data, weight_map):   # 为数据添加权重，weight_map是一个字典，key是类别，value是权重
     pd_data["weight"] = pd_data["event_cls"].map(weight_map)
     return pd_data
 
@@ -72,20 +72,20 @@ def __convert_to_dataframe(data, labels_data=[]):
             label = 0
         label = max(item.get("event_cls", 0), item.get("label_cls", 0), label)
         if item.get("pos", None) is None:
-            next_index = -1
-            for i in range(index + 1, index + 5):
-                if i >= len(data):
+            next_index = -1    # 设置next_index为-1，作为标志位，如果最终next_index仍然是-1，说明没有找到后续的有效位置数据
+            for i in range(index + 1, index + 5):     # 从当前索引的下一个开始，往后最多搜索4个位置
+                if i >= len(data):     # 如果已经遍历到数据末尾，则跳出循环
                     break
-                if data[i].get("pos", None) is not None:
+                if data[i].get("pos", None) is not None: 
                     next_index = i
                     break
-            if next_index == -1:
+            if next_index == -1:   # 如果循环结束后next_index仍是-1，说明在接下来的5个数据中都没找到有效位置，则跳过这个点
                 continue
-            last_data = pd_data[-1]
+            last_data = pd_data[-1] 
             next_item = data[next_index]
 
-            x = (last_data["x"] + next_item["pos"]["x"]) / (next_index - index + 1)
-            y = (last_data["y"] + next_item["pos"]["y"]) / (next_index - index + 1)
+            x = (last_data["x"] + next_item["pos"]["x"]) / (next_index - index + 1)   # 计算插值的X坐标，取前后已知点的平均值
+            y = (last_data["y"] + next_item["pos"]["y"]) / (next_index - index + 1)   # 计算插值的Y坐标，取前后已知点的平均值
             # if y < 200:  # 只考虑近处的摄像头
             #     label = 0
             pd_data.append({
@@ -93,7 +93,7 @@ def __convert_to_dataframe(data, labels_data=[]):
                 "x": x,
                 "y": y,
                 "event_cls": label,
-                "coord": 0,  # inserted
+                "coord": 0,  # inserted  "coord": 0 表示这是插入/插值的数据
                 "video_file": item.get("video_file", "")
             })
         else:
@@ -105,7 +105,7 @@ def __convert_to_dataframe(data, labels_data=[]):
                 "x": item["pos"]["x"],
                 "y": item["pos"]["y"],
                 "event_cls": label,
-                "coord": 1,  # real
+                "coord": 1,  # real  "coord": 1 表示这是实际观测到的数据点
                 "video_file": item.get("video_file", "")
             })
     if len(pd_data) > 0:
@@ -127,13 +127,17 @@ def load_data(directories, tag="left", single_view=False):   # 是否是单视�
             file_path = os.path.join(directory, f"{tag}_bounce_train.json")
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"文件 {file_path} 不存在。")
+        
         datalist = [json.loads(line.strip()) for line in open(file_path, "r").readlines()]
-        tracks_data = {}
+        
+        
+        tracks_data = {}   # 创建字典tracks_data，键为轨迹ID，值为该轨迹的所有数据点 
         for item in datalist:
-            track_id = item["track_id"]
-            if track_id not in tracks_data:
-                tracks_data[track_id] = []
-            tracks_data[track_id].append(item)
+            track_id = item["track_id"]    # 获取每个的轨迹ID
+            if track_id not in tracks_data:   
+                tracks_data[track_id] = []    # 如果字典中没有该轨迹ID，则创建一个空列表，用于存储该轨迹的所有数据点
+            tracks_data[track_id].append(item)   # 将当前数据点添加到对应轨迹ID的列表中，便于按轨迹处理数据
+            
         for track_id, track_data in tracks_data.items():
             track_data = sorted(track_data, key=lambda x: x["timestamp"])
             tmp = __convert_to_dataframe(track_data)
@@ -144,8 +148,8 @@ def load_data(directories, tag="left", single_view=False):   # 是否是单视�
     resdf = resdf.sample(frac=1, random_state=42).reset_index(drop=True)
     return resdf
 
-def find_nearest_timestamp(timestamp, timestamps):
-    min_diff = float('inf')
+def find_nearest_timestamp(timestamp: int, timestamps: list[int]):  # 在一组时间戳中找到与目标时间戳最接近的那个时间戳
+    min_diff = float('inf')  
     nearest_timestamp = None
     for t in timestamps:
         diff = abs(t - timestamp)
@@ -156,25 +160,25 @@ def find_nearest_timestamp(timestamp, timestamps):
 
 
 
-
-
 def train(train_data, test_data):
-    if train_data["event_cls"].nunique() < 2:
+    if train_data["event_cls"].nunique() < 2:  # 统计event_cls列中唯一值的数量，如果小于2，则说明只有单一类别，即没有正样本
         raise ValueError("训练集中只有单一类别（event_cls 全为同一值）。请检查 bounce_train.json 是否包含正样本，或重新生成标注数据。")
+    
     catboost_regressor = CatBoostRegressor(iterations=3000, depth=3, learning_rate=0.1, loss_function='RMSE')
-    catboost_regressor.fit(train_data[get_feature_cols(PREV_WINDOW_NUM, AFTER_WINDOW_NUM)], train_data['event_cls'],
-                        eval_set=(test_data[get_feature_cols(PREV_WINDOW_NUM, AFTER_WINDOW_NUM)], test_data['event_cls']),
-                        use_best_model=True, sample_weight=train_data['weight'],
-                        # early_stopping_rounds=100,
-                        )
-
+    catboost_regressor.fit(
+        train_data[get_feature_cols(PREV_WINDOW_NUM, AFTER_WINDOW_NUM)],  # 训练特征
+        train_data['event_cls'],                                         # 训练标签
+        eval_set=(test_data[get_feature_cols(PREV_WINDOW_NUM, AFTER_WINDOW_NUM)], test_data['event_cls']),  # 验证集
+        use_best_model=True,                                             # 使用最佳模型
+        sample_weight=train_data['weight'],                              # 样本权重
+        # early_stopping_rounds=100,                                    # 早停轮数（注释掉了）
+    )
     return catboost_regressor
 
 
 def evaluate(train_data, test_data, catboost_regressor):
     test_data["pred"] = catboost_regressor.predict(test_data[get_feature_cols(PREV_WINDOW_NUM, AFTER_WINDOW_NUM)])
     output_cols = ["timestamp", "pred", "event_cls", "x", "y"]
-    import numpy as np
     for threshold in np.arange(0.1, 1, 0.1):
         print(f'===> threshold: {threshold}')
 
@@ -185,8 +189,8 @@ def evaluate(train_data, test_data, catboost_regressor):
         all_positive_timestamps += list(train_data[train_data['event_cls'] == 1]["timestamp"])
         positive_timestamps = list(val[val['event_cls'] == 1]["timestamp"])
         val["timestamp"]= val["timestamp"].astype(np.int64)
-        if threshold == 0.4:
-            val[["timestamp", "pred", "event_cls", "x", "y", "source_video"]].to_csv("val_0.4.csv", index=False)
+        # if threshold == 0.4:
+        #     val[["timestamp", "pred", "event_cls", "x", "y", "source_video"]].to_csv("val_0.4.csv", index=False)
         tp = 0
         tn = 0
         fp = 0
@@ -226,7 +230,6 @@ def evaluate(train_data, test_data, catboost_regressor):
             precision = tp/(tp + fp)
         print(f'accuracy: {acc}, recall: {recall}, precision: {precision}')
 
-    from sklearn.metrics import roc_auc_score
     print("roc", roc_auc_score(test_data['event_cls'], test_data['pred']))
 
 
@@ -246,31 +249,14 @@ def main():
     catboost_regressor.save_model("stroke_model.cbm")
     evaluate(train_data, test_data, catboost_regressor)
 
-def points_to_features(points):
-    points = pd.DataFrame(points, columns=["x", "y"])
-    features = to_features(points)
-    cols = get_feature_cols(PREV_WINDOW_NUM, AFTER_WINDOW_NUM)
-    assert len(features) == 1
-    print(features[cols].iloc[0].values)
-    return features[cols].iloc[0].values
-
-def check_model(points):
-    model_path = "stroke_model.cbm"  # 修正路径：模型在当前目录
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"模型文件 {model_path} 不存在。")
-    catboost_regressor = CatBoostRegressor()
-    catboost_regressor.load_model(model_path)
-    features = points_to_features(points)
-    print(catboost_regressor.predict(features))
-
 
 def predict():
-    model_path = "stroke_model.cbm"  # 修正路径：模型在当前目录
+    model_path = "stroke_model.cbm"  
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"模型文件 {model_path} 不存在。")
     catboost_regressor = CatBoostRegressor()
     catboost_regressor.load_model(model_path)
-    # # 多视角代码（注释掉）
+    # # 多视角
     # test_data = pd.concat([
     #     load_data([os.path.join(TRAIN_DIR, dirname) for dirname in ["20241121_184001"]], "left"),
     #     load_data([os.path.join(TRAIN_DIR, dirname) for dirname in ["20241121_184001"]], "right"),
@@ -291,12 +277,4 @@ def predict():
 if __name__ == "__main__":
     main()
     predict()  # 取消注释来生成预测结果文件
-    # check_model([(371.0, 534.3333129882812), (372.3333435058594, 547.6666259765625), (375.33331298828125, 566.3333129882812), (372.3333435058594, 555.0), (370.33331298828125, 543.3333129882812)])
-    # predict()
 
-# origin input data format
-# {"timestamp": 1716729600,"x": 372.3333435058594,"y": 547.6666259765625,"event_cls": 0}
-# {"timestamp": 1716729600,"x": 372.3333435058594,"y": 547.6666259765625,"event_cls": 0}
-# {"timestamp": 1716729600,"event_cls": 0}
-# {"timestamp": 1716729600,"x": 372.3333435058594,"y": 547.6666259765625,"event_cls": 1}
-# 1. 插帧   2. window  3. 7条数据转成1条数据（20多个特征）  训练分类
