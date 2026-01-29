@@ -113,7 +113,7 @@ def __convert_to_dataframe(data, labels_data=[]):
         pd_data = __add_weight(pd_data, {1: 400, 0: 1})
     return pd_data
 
-def load_data(directories, tag="left", single_view=False):   # 是否是单视角，如果以后有多视角，设single_view=False并取消注释。
+def load_data(directories, tag="left", single_view=False, shuffle=True):   # 是否是单视角，如果以后有多视角，设single_view=False。
     for directory in directories:
         if not os.path.exists(directory):
             raise FileNotFoundError(f"目录 {directory} 不存在。")
@@ -145,20 +145,9 @@ def load_data(directories, tag="left", single_view=False):   # 是否是单视�
                 video_file = tmp["video_file"].iloc[0] if len(tmp) > 0 and "video_file" in tmp.columns else ""
                 tmp["source_video"] = os.path.join(directory, "video", video_file).replace("\\", "/")  # 统一路径分隔符
                 resdf = pd.concat([resdf, to_features(tmp)], ignore_index=True)
-    resdf = resdf.sample(frac=1, random_state=42).reset_index(drop=True)
+    if shuffle:
+        resdf = resdf.sample(frac=1, random_state=42).reset_index(drop=True)
     return resdf
-
-def find_nearest_timestamp(timestamp: int, timestamps: list[int]):  # 在一组时间戳中找到与目标时间戳最接近的那个时间戳
-    min_diff = float('inf')  
-    nearest_timestamp = None
-    for t in timestamps:
-        diff = abs(t - timestamp)
-        if diff < min_diff:
-            min_diff = diff
-            nearest_timestamp = t
-    return nearest_timestamp
-
-
 
 def train(train_data, test_data):
     if train_data["event_cls"].nunique() < 2:  # 统计event_cls列中唯一值的数量，如果小于2，则说明只有单一类别，即没有正样本
@@ -178,7 +167,6 @@ def train(train_data, test_data):
 
 def evaluate(train_data, test_data, catboost_regressor):
     test_data["pred"] = catboost_regressor.predict(test_data[get_feature_cols(PREV_WINDOW_NUM, AFTER_WINDOW_NUM)])
-    output_cols = ["timestamp", "pred", "event_cls", "x", "y"]
     
     # 存储每个阈值的指标
     thresholds = []
@@ -190,46 +178,29 @@ def evaluate(train_data, test_data, catboost_regressor):
     for threshold in np.arange(0.1, 1, 0.1):
         print(f'===> threshold: {threshold}')
 
-        # calculate accuracy
-        val = test_data
-
-        all_positive_timestamps = list(val[val['event_cls'] == 1]["timestamp"])
-        all_positive_timestamps += list(train_data[train_data['event_cls'] == 1]["timestamp"])
-        positive_timestamps = list(val[val['event_cls'] == 1]["timestamp"])
-        val["timestamp"]= val["timestamp"].astype(np.int64)
-
+        # 标准混淆矩阵计算：直接基于 event_cls 和 pred > threshold
         tp = 0
         tn = 0
         fp = 0
         fn = 0
-        found_positive_timestamps = []
-        for index in range(len(val)):
-            row = val.iloc[index]
-            nearest_positive_timestamp = find_nearest_timestamp(row["timestamp"], all_positive_timestamps)
-            if row["pred"] > threshold:
-                if abs(nearest_positive_timestamp - row["timestamp"]) < 110:
-                    found_positive_timestamps.append(nearest_positive_timestamp)
-                    tp += 1
-                else:
-                    fp += 1
-                    # print(f'fp: {row[output_cols].to_dict()}')
+        
+        for index in range(len(test_data)):
+            row = test_data.iloc[index]
+            pred_positive = row["pred"] > threshold
+            true_positive = row["event_cls"] == 1
+            
+            if pred_positive and true_positive:
+                tp += 1
+            elif pred_positive and not true_positive:
+                fp += 1
+            elif not pred_positive and true_positive:
+                fn += 1
             else:
-                if row["timestamp"] not in positive_timestamps or row["event_cls"] == 0:
-                    tn += 1
-                else:
-                    found_nearest_timestamp = find_nearest_timestamp(row["timestamp"], found_positive_timestamps)
-                    if found_nearest_timestamp is None:
-                        fn += 1
-                        # print(f'fn: {row[output_cols].to_dict()}')
-                    else:
-                        if abs(row["timestamp"] - found_nearest_timestamp) < 110:
-                            tn += 1
-                        else:
-                            fn += 1
-                            # print(f'fn: {row[output_cols].to_dict()}')
+                tn += 1
+        
         print(f'tp: {tp}, tn: {tn}, fp: {fp}, fn: {fn}, total: {tn + tp + fn + fp}')
 
-        acc = (tn + tp) / (tn + tp + fn + fp)
+        acc = (tn + tp) / (tn + tp + fn + fp) if (tn + tp + fn + fp) > 0 else 0
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0
         f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
@@ -258,8 +229,8 @@ def main():
     test_dirs = [os.path.join(TEST_DIR, d) for d in os.listdir(TEST_DIR) if os.path.isdir(os.path.join(TEST_DIR, d)) and d.startswith("match")]
     
     # 加载训练和测试数据
-    train_data = load_data(train_dirs, single_view=True)
-    test_data = load_data(test_dirs, single_view=True)
+    train_data = load_data(train_dirs, single_view=True, shuffle=True)  # 训练集shuffle
+    test_data = load_data(test_dirs, single_view=True, shuffle=False)   # 测试集不shuffle，保持时序
     
     print(f"Train data shape: {train_data.shape}, positive samples: {len(train_data[train_data['event_cls'] == 1])}")
     print(f"Test data shape: {test_data.shape}, positive samples: {len(test_data[test_data['event_cls'] == 1])}")
@@ -284,7 +255,7 @@ def predict(threshold=0.4):    # 如果单独调用 predict()，使用默认 0.4
     # ]).sample(frac=1).reset_index(drop=True)
     # 单视角代码（修改为使用所有测试目录）
     test_dirs = [os.path.join(TEST_DIR, d) for d in os.listdir(TEST_DIR) if os.path.isdir(os.path.join(TEST_DIR, d)) and d.startswith("match")]
-    test_data = load_data(test_dirs, single_view=True)
+    test_data = load_data(test_dirs, single_view=True, shuffle=False)  # 预测时不shuffle，保持时序
     test_data["pred"] = catboost_regressor.predict(test_data[get_feature_cols(PREV_WINDOW_NUM, AFTER_WINDOW_NUM)])
     test_data[["timestamp", "pred", "event_cls", "x", "y", "source_video"]].to_csv("predict.csv", index=False)
     
