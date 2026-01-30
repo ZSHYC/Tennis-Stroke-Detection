@@ -3,7 +3,7 @@ import json
 import numpy as np
 import os
 from catboost import CatBoostRegressor
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, confusion_matrix
 
 TRAIN_DIR = "data/train"
 if not os.path.exists(TRAIN_DIR):
@@ -178,25 +178,10 @@ def evaluate(train_data, test_data, catboost_regressor):
     for threshold in np.arange(0.1, 1, 0.1):
         print(f'===> threshold: {threshold}')
 
-        # 标准混淆矩阵计算：直接基于 event_cls 和 pred > threshold
-        tp = 0
-        tn = 0
-        fp = 0
-        fn = 0
-        
-        for index in range(len(test_data)):
-            row = test_data.iloc[index]
-            pred_positive = row["pred"] > threshold
-            true_positive = row["event_cls"] == 1
-            
-            if pred_positive and true_positive:
-                tp += 1
-            elif pred_positive and not true_positive:
-                fp += 1
-            elif not pred_positive and true_positive:
-                fn += 1
-            else:
-                tn += 1
+        # 使用 sklearn 计算混淆矩阵
+        pred_labels = (test_data["pred"] > threshold).astype(int)
+        cm = confusion_matrix(test_data['event_cls'], pred_labels)
+        tn, fp, fn, tp = cm.ravel()  # [[tn, fp], [fn, tp]]
         
         print(f'tp: {tp}, tn: {tn}, fp: {fp}, fn: {fn}, total: {tn + tp + fn + fp}')
 
