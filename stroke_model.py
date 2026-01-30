@@ -93,7 +93,7 @@ def __convert_to_dataframe(data, labels_data=[]):
                 "x": x,
                 "y": y,
                 "event_cls": label,
-                "coord": 0,  # inserted  "coord": 0 表示这是插入/插值的数据
+                # "coord": 0,  # inserted  "coord": 0 表示这是插入/插值的数据
                 "video_file": item.get("video_file", "")
             })
         else:
@@ -105,7 +105,7 @@ def __convert_to_dataframe(data, labels_data=[]):
                 "x": item["pos"]["x"],
                 "y": item["pos"]["y"],
                 "event_cls": label,
-                "coord": 1,  # real  "coord": 1 表示这是实际观测到的数据点
+                # "coord": 1,  # real  "coord": 1 表示这是实际观测到的数据点
                 "video_file": item.get("video_file", "")
             })
     if len(pd_data) > 0:
