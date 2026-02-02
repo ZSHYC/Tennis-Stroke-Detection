@@ -1,75 +1,48 @@
 # 网球击球检测系统 (Tennis Stroke Detection System)
 
-[![Python](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://www.python.org/)
-[![CatBoost](https://img.shields.io/badge/CatBoost-Machine%20Learning-orange.svg)](https://catboost.ai/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-基于机器学习的网球击球点自动检测系统，使用 CatBoost 回归模型对网球轨迹数据进行时序特征提取和击球点预测。
 
----
+本项目旨在自动识别网球比赛中的击球点（stroke points）。系统接收网球的轨迹数据（包括帧号、时间戳、坐标等），通过时序特征工程和 CatBoost 模型，精准预测每个时间点是否为击球瞬间。
 
-## 📑 目录
 
-- [项目简介](#项目简介)
-- [核心功能](#核心功能)
-- [技术架构](#技术架构)
-- [环境配置](#环境配置)
-- [快速开始](#快速开始)
-- [详细使用说明](#详细使用说明)
-- [项目结构](#项目结构)
-- [模型原理](#模型原理)
-- [性能优化](#性能优化)
-- [常见问题](#常见问题)
-- [贡献指南](#贡献指南)
 
 ---
 
-## 🎯 项目简介
+## 📁 项目结构
 
-本项目旨在通过机器学习技术自动识别网球比赛中的击球点（stroke points）。系统接收网球的轨迹数据（包括帧号、时间戳、坐标等），通过时序特征工程和 CatBoost 模型，精准预测每个时间点是否为击球瞬间。
-
-### 应用场景
-- 🎾 **网球比赛分析**：自动标注击球时刻，生成比赛统计
-- 📊 **运动数据分析**：辅助教练分析运动员击球习惯
-- 🤖 **智能视频剪辑**：基于击球点自动剪辑精彩片段
-- 🔬 **运动科学研究**：研究击球动作的生物力学特征
-
+```
+classification/
+│
+├── stroke_model.py              # 特征工程与通用逻辑库
+├── train.py                     # 模型训练脚本（核心）
+├── predict.py                   # 预测脚本（核心）
+├── README.md                    # 项目文档（本文件）
+│
+├── Tennis-Stroke-Analysis-Data/ # 数据目录
+│   ├── 1_parse_logs.py         # 数据预处理脚本
+│   ├── 2_prepare_data.py       # 数据准备脚本
+│   ├── 3_trajectory_labeler.py # 轨迹标注脚本
+│   ├── output/
+│   │   ├── parsed_a.csv        # 解析后的原始数据
+│   │   └── training_segment.csv # 训练数据（主要输入）
+│   └── README/                  # 数据处理文档
+│       ├── 1_parse_logs.md
+│       ├── 2_prepare_data.md
+│       └── 3_trajectory_labeler.md
+│
+├── stroke_model.cbm             # 训练好的模型文件（输出）
+├── best_threshold.txt           # 最佳阈值文件（输出）
+├── pr_curve.png                 # PR 曲线图（输出）
+│
+├── predict.csv                  # 完整预测结果（输出）
+├── predict_bounces.csv          # 击球点筛选结果（输出）
+│
+├── catboost_info/               # CatBoost 训练日志（自动生成）
+└── __pycache__/                 # Python 缓存（自动生成）
+```
 ---
 
-## ✨ 核心功能
-
-### 1. 智能训练系统 (`stroke_model.py`)
-- ✅ **轨迹分组处理**：按 `traj_id` 分组，避免特征计算时的数据泄露
-- ✅ **时序特征工程**：自动生成前向窗口和后向窗口的差分/比例特征
-- ✅ **不平衡数据处理**：通过样本权重（40:1）处理正负样本不平衡问题
-- ✅ **智能早停机制**：自动保存验证集表现最优的模型，防止过拟合
-- ✅ **多指标评估**：提供 Accuracy、Recall、Precision、F1、F-beta、ROC-AUC、AUC-PR 等全面评估
-- ✅ **最佳阈值搜索**：遍历 98 个阈值点，自动选择 F-beta 最大的阈值（优先召回率）
-- ✅ **可视化输出**：自动生成 PR 曲线图，直观展示模型性能
-
-### 2. 灵活预测系统 (`predict.py`)
-- ✅ **独立运行**：无需重新训练，直接加载模型进行预测
-- ✅ **阈值选择**：支持使用最佳阈值或自定义阈值
-- ✅ **批量预测**：可对任意 CSV 数据文件进行预测
-- ✅ **结果输出**：生成完整预测结果和击球点筛选结果
-- ✅ **命令行界面**：提供丰富的命令行参数，灵活配置
-
----
-
-## 🏗️ 技术架构
-
-### 核心技术栈
-
-| 技术/库 | 版本要求 | 用途 |
-|---------|---------|------|
-| Python | 3.7+ | 主要开发语言 |
-| pandas | 最新 | 数据处理与特征工程 |
-| numpy | 最新 | 数值计算 |
-| CatBoost | 最新 | 梯度提升回归模型 |
-| scikit-learn | 最新 | 评估指标与数据处理 |
-| matplotlib | 最新 | 数据可视化 |
-
-### 模型架构
+## 模型架构
 
 ```
 输入: 轨迹数据 (CSV)
@@ -107,26 +80,12 @@ CatBoost 训练 (3000 iterations, depth=3)
 
 ## 🔧 环境配置
 
-### 方式 1：使用 pip 安装
 
-```bash
-# 克隆项目
-git clone https://github.com/ZSHYC/Tennis.git
-cd Tennis
-
-# 创建虚拟环境（推荐）
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 安装依赖
-pip install pandas numpy catboost scikit-learn matplotlib
-```
-
-### 方式 2：使用 Anaconda
+### 
 
 ```bash
 # 创建 conda 环境
-conda create -n tennis python=3.9
+conda create -n tennis python=3.10
 conda activate tennis
 
 # 安装依赖
@@ -164,7 +123,7 @@ Tennis-Stroke-Analysis-Data/output/training_segment.csv
 ### 步骤 2：训练模型
 
 ```bash
-python stroke_model.py
+python train.py
 ```
 
 **输出文件**：
@@ -224,21 +183,24 @@ python predict.py --data path/to/new_data.csv --threshold 0.5 --output result
 
 ## 📖 详细使用说明
 
-### 训练脚本 (`stroke_model.py`)
+### 训练脚本 (`train.py`)
 
 #### 核心参数配置
 
-在脚本开头可修改以下参数：
-
+**数据路径配置**（在 `train.py` 中）：
 ```python
 DATA_FILE = "Tennis-Stroke-Analysis-Data/output/training_segment.csv"  # 数据文件路径
+```
+
+**特征窗口配置**（在 `stroke_model.py` 中）：
+```python
 PREV_WINDOW_NUM = 2   # 前向窗口大小（使用前2帧计算差分）
 AFTER_WINDOW_NUM = 2  # 后向窗口大小（使用后2帧计算差分）
 ```
 
 #### 样本权重调整
 
-在 `load_data()` 函数中：
+在 `stroke_model.py` 的 `load_data()` 函数中：
 ```python
 resdf = __add_weight(resdf, {1: 40, 0: 1})  # 正样本权重40，负样本权重1
 ```
@@ -316,39 +278,7 @@ python predict.py --data test_set_2.csv --output test2
 python predict.py --model my_custom_model.cbm --threshold 0.45
 ```
 
----
 
-## 📁 项目结构
-
-```
-classification/
-│
-├── stroke_model.py              # 模型训练脚本（核心）
-├── predict.py                   # 预测脚本（核心）
-├── README.md                    # 项目文档（本文件）
-│
-├── Tennis-Stroke-Analysis-Data/ # 数据目录
-│   ├── 1_parse_logs.py         # 数据预处理脚本
-│   ├── 2_prepare_data.py       # 数据准备脚本
-│   ├── 3_trajectory_labeler.py # 轨迹标注脚本
-│   ├── output/
-│   │   ├── parsed_a.csv        # 解析后的原始数据
-│   │   └── training_segment.csv # 训练数据（主要输入）
-│   └── README/                  # 数据处理文档
-│       ├── 1_parse_logs.md
-│       ├── 2_prepare_data.md
-│       └── 3_trajectory_labeler.md
-│
-├── stroke_model.cbm             # 训练好的模型文件（输出）
-├── best_threshold.txt           # 最佳阈值文件（输出）
-├── pr_curve.png                 # PR 曲线图（输出）
-│
-├── predict.csv                  # 完整预测结果（输出）
-├── predict_bounces.csv          # 击球点筛选结果（输出）
-│
-├── catboost_info/               # CatBoost 训练日志（自动生成）
-└── __pycache__/                 # Python 缓存（自动生成）
-```
 
 ---
 
@@ -389,8 +319,7 @@ y_div_1 = y_diff_1 / (y_diff_inv_1 + ε)
 - ✅ 更好地处理不平衡数据（通过样本权重）
 - ✅ 平滑的预测曲线，减少抖动
 
-**劣势**：
-- ❌ 需要额外的阈值搜索步骤
+
 
 ### 3. Group Split 防止数据泄露
 
@@ -601,70 +530,3 @@ print(classification_report(y_true, y_pred))
 1. 只使用前向特征（修改 `get_feature_cols`）
 2. 接受 2 帧延迟（缓冲后预测）
 3. 使用滑动窗口实时计算特征
-
----
-
-## 🤝 贡献指南
-
-欢迎贡献代码、报告 Bug 或提出新功能！
-
-### 贡献流程
-
-1. **Fork 本仓库**
-2. **创建特性分支**：
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-3. **提交更改**：
-   ```bash
-   git commit -m "Add: your feature description"
-   ```
-4. **推送到分支**：
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-5. **提交 Pull Request**
-
-### 代码规范
-
-- 遵循 PEP 8 风格指南
-- 添加必要的注释（中英文均可）
-- 更新 README 文档（如果修改了功能）
-
----
-
-## 📜 许可证
-
-本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
-
----
-
-## 📧 联系方式
-
-- **项目维护者**: ZSHYC
-- **GitHub**: https://github.com/ZSHYC/Tennis
-- **问题反馈**: [提交 Issue](https://github.com/ZSHYC/Tennis/issues)
-
----
-
-## 🙏 致谢
-
-感谢以下开源项目：
-- [CatBoost](https://catboost.ai/) - 强大的梯度提升框架
-- [scikit-learn](https://scikit-learn.org/) - 机器学习工具集
-- [pandas](https://pandas.pydata.org/) - 数据分析库
-
----
-
-## 📊 更新日志
-
-### v1.0.0 (2026-01-30)
-- ✅ 完成基础训练和预测功能
-- ✅ 实现 F-beta 优化的阈值搜索
-- ✅ 添加 AUC-PR 和 PR 曲线可视化
-- ✅ 支持命令行参数配置
-- ✅ 完善文档和使用说明
-
----
-
-**⭐ 如果本项目对你有帮助，请点击 Star 支持我们！**
