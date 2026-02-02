@@ -50,6 +50,7 @@ def to_features(data, prev_window_num=PREV_WINDOW_NUM, after_window_num=AFTER_WI
         
     for i in range(1, after_window_num):
         data = data[data['x_lag_inv_{}'.format(i)].notna()]
+    
     data = data[data['x'].notna()] 
     return data
 
@@ -66,7 +67,7 @@ def load_data(file_path, shuffle=True):
     print(f"Loading data from {file_path}")
     df = pd.read_csv(file_path)
     
-    # 2. 过滤掉未核对的数据 (is_checked == 0 的可能是未标注数据，视为脏数据丢弃)
+    # 2. 过滤掉未核对的数据 (is_checked =！1 的是未标注数据，视为脏数据丢弃)
     if 'is_checked' in df.columns:
         original_len = len(df)
         df = df[df['is_checked'] == 1].copy()
