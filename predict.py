@@ -58,7 +58,7 @@ from stroke_model import load_data, get_feature_cols, PREV_WINDOW_NUM, AFTER_WIN
 
 # 配置
 DATA_FILE = "Tennis-Stroke-Analysis-Data/output/training_segment.csv"
-MODEL_PATH = "stroke_model.cbm"
+MODEL_PATH = "models/stroke_model.cbm"
 BEST_THRESHOLD_FILE = "best_threshold.txt"
 
 

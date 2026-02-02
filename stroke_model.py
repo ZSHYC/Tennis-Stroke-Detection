@@ -7,45 +7,84 @@ PREV_WINDOW_NUM = 2
 AFTER_WINDOW_NUM = 2
 
 def get_feature_cols(prev_window_num=PREV_WINDOW_NUM, after_window_num=AFTER_WINDOW_NUM):
-    colnames_x = ['x_diff_{}'.format(i) for i in range(1, prev_window_num)] + \
-                ['x_diff_inv_{}'.format(i) for i in range(1, after_window_num)] + \
-                ["x_div_{}".format(i) for i in range(1, after_window_num)] #+ \
-                #["x"]
-    colnames_y = ['y_diff_{}'.format(i) for i in range(1, prev_window_num)] + \
-                    ['y_diff_inv_{}'.format(i) for i in range(1, after_window_num)] + \
-                    ["y_div_{}".format(i) for i in range(1, after_window_num)] #+ \
-                    # ["y"]
-    colnames = colnames_x + colnames_y #+ ["coord"]
-    return colnames
+    # 为了匹配 stroke_predictor.py 的 24 维特征顺序
+    # 总特征数 = (prev + after) * 3 * 2 (x, y) = 4 * 3 * 2 = 24
+    total_window = prev_window_num + after_window_num
+    cols = []
+    for axis in ['x', 'y']:
+        cols.extend([f'{axis}_custom_diff_{i}' for i in range(total_window)])
+        cols.extend([f'{axis}_custom_diff_inv_{i}' for i in range(total_window)])
+        cols.extend([f'{axis}_custom_div_{i}' for i in range(total_window)])
+    return cols
 
 def to_features(data, prev_window_num=PREV_WINDOW_NUM, after_window_num=AFTER_WINDOW_NUM):
-    eps = 1e-15  # 防止除零错误
-    data = data.copy()  # Create a copy of the DataFrame to avoid SettingWithCopyWarning
-    for i in range(1, prev_window_num):
-        data.loc[:, 'x_lag_{}'.format(i)] = data['x'].shift(i)  # 创建一个新列，存储Y坐标的滞后值（即前几个时间点的Y坐标值）  data.loc[:, column_name]表示选择所有行和指定列,   .shift(i)：将这一列的数据向下移动i行
-        data.loc[:, 'y_lag_{}'.format(i)] = data['y'].shift(i)
-        data.loc[:, 'x_diff_{}'.format(i)] = data['x_lag_{}'.format(i)] - data['x']   # 计算当前点与滞后点的X坐标差值
-        data.loc[:, 'y_diff_{}'.format(i)] = data['y_lag_{}'.format(i)] - data['y']
-
-
-    for i in range(1, after_window_num):
-        data.loc[:, 'x_lag_inv_{}'.format(i)] = data['x'].shift(-i)   # data['x'].shift(-i)：向上移动i行，获取未来的值    x_lag_inv_i, y_lag_inv_i: 存储未来i个时间步长的坐标值
-        data.loc[:, 'y_lag_inv_{}'.format(i)] = data['y'].shift(-i) 
-        data.loc[:, 'x_diff_inv_{}'.format(i)] = data['x_lag_inv_{}'.format(i)] - data['x']        # x_lag_inv_i, y_lag_inv_i: 存储未来i个时间步长的坐标值，利用未来信息（仅在特征工程中使用，实时预测时不可用）
-        data.loc[:, 'y_diff_inv_{}'.format(i)] = data['y_lag_inv_{}'.format(i)] - data['y']
-
-
-    for i in range(1, after_window_num):
-        data.loc[:, 'x_div_{}'.format(i)] = data['x_diff_{}'.format(i)]/(data['x_diff_inv_{}'.format(i)] + eps)    # （过去坐标 - 当前坐标）/ （未来坐标 - 当前坐标）
-        data.loc[:, 'y_div_{}'.format(i)] = data['y_diff_{}'.format(i)]/(data['y_diff_inv_{}'.format(i)] + eps)
-
-    for i in range(1, prev_window_num):
-        data = data[data['x_lag_{}'.format(i)].notna()]     #  保留x_lag_i列中非空（not null and not NaN）的行，移除由于shift操作产生的空值行（因为shift操作会在开始或结尾产生NaN值）
-        
-    for i in range(1, after_window_num):
-        data = data[data['x_lag_inv_{}'.format(i)].notna()]
+    eps = 1e-15
+    data = data.copy()
     
-    data = data[data['x'].notna()] 
+    # 1. 计算基础 lag
+    # before
+    for i in range(1, prev_window_num + 1):
+        data[f'x_lag_{i}'] = data['x'].shift(i)
+        data[f'y_lag_{i}'] = data['y'].shift(i)
+    # after
+    for i in range(1, after_window_num + 1):
+        data[f'x_inv_{i}'] = data['x'].shift(-i)
+        data[f'y_inv_{i}'] = data['y'].shift(-i)
+
+    # 2. 计算相对于 current 的差值 (diff)
+    for axis in ['x', 'y']:
+        data[f'{axis}_d_zero'] = 0.0
+        # Lag diffs (before)
+        for i in range(1, prev_window_num + 1):
+            data[f'{axis}_d_b{i}'] = data[f'{axis}_lag_{i}'] - data[axis]
+        # Inv diffs (after)
+        for i in range(1, after_window_num + 1):
+            data[f'{axis}_d_a{i}'] = data[f'{axis}_inv_{i}'] - data[axis]
+
+    # 3. 构造与 stroke_predictor.py 对应的特征列
+    # 构造按时间顺序排列的点对应 diff 列名列表: [b2, b1, zero, a1, a2]
+    # (注意: b2 是最远过去, b1 是最近过去)
+    
+    for axis in ['x', 'y']:
+        diff_cols_ordered = []
+        # Add befores (从大到小: b2, b1)
+        for i in range(prev_window_num, 0, -1):
+            diff_cols_ordered.append(f'{axis}_d_b{i}')
+        
+        diff_cols_ordered.append(f'{axis}_d_zero')
+        
+        # Add afters (从小到大: a1, a2)
+        for i in range(1, after_window_num + 1):
+            diff_cols_ordered.append(f'{axis}_d_a{i}')
+            
+        total_points = len(diff_cols_ordered) # 5 for win=2+2
+        
+        # Diff features mapping
+        # Predictor logic: for i in range(1, 5): idx = 5 - 1 - i
+        for i in range(1, total_points): 
+            target_col = diff_cols_ordered[total_points - 1 - i]
+            data[f'{axis}_custom_diff_{i-1}'] = data[target_col]
+
+        # Diff inv features mapping
+        # Predictor: lag_pos = positions[i] -> indices 1, 2, 3, 4
+        for i in range(1, total_points):
+            target_col = diff_cols_ordered[i]
+            data[f'{axis}_custom_diff_inv_{i-1}'] = data[target_col]
+            
+        # Div features
+        total_features = total_points - 1
+        for i in range(total_features):
+            data[f'{axis}_custom_div_{i}'] = data[f'{axis}_custom_diff_{i}'] / (data[f'{axis}_custom_diff_inv_{i}'] + eps)
+
+    # 4. 过滤 NaN
+    drop_cols = []
+    for i in range(1, prev_window_num + 1):
+        drop_cols.append(f'x_lag_{i}')
+    for i in range(1, after_window_num + 1):
+        drop_cols.append(f'x_inv_{i}')
+    
+    data = data.dropna(subset=drop_cols + ['x'])
+    
     return data
 
 def __add_weight(pd_data, weight_map):   # 为数据添加权重，weight_map是一个字典，key是类别，value是权重
@@ -106,7 +145,7 @@ def load_data(file_path, shuffle=True):
         return pd.DataFrame()
 
     # 6. 添加权重
-    resdf = __add_weight(resdf, {1: 40, 0: 1})
+    resdf = __add_weight(resdf, {1: 20, 0: 1})
     
     if shuffle:
         resdf = resdf.sample(frac=1, random_state=42).reset_index(drop=True)

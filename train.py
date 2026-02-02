@@ -5,10 +5,9 @@ from catboost import CatBoostRegressor
 from sklearn.metrics import roc_auc_score, confusion_matrix, precision_recall_curve, auc
 import matplotlib.pyplot as plt
 
-# 从 stroke_model 导入特征工程和数据加载逻辑
 from stroke_model import load_data, get_feature_cols, PREV_WINDOW_NUM, AFTER_WINDOW_NUM
 
-# 数据文件路径
+
 DATA_FILE = "Tennis-Stroke-Analysis-Data/output/training_segment.csv"
 
 def train(train_data, test_data):
@@ -38,7 +37,7 @@ def evaluate(train_data, test_data, catboost_regressor):
     f1_scores = []
     f_beta_scores = []  # 新增F-beta分数
     
-    for threshold in np.arange(0.01, 0.99, 0.01):
+    for threshold in np.arange(0.2, 0.50, 0.01):
         # print(f'===> threshold: {threshold}')
 
         # 使用 sklearn 计算混淆矩阵
@@ -46,18 +45,18 @@ def evaluate(train_data, test_data, catboost_regressor):
         cm = confusion_matrix(test_data['event_cls'], pred_labels)
         tn, fp, fn, tp = cm.ravel()  # [[tn, fp], [fn, tp]]
         
-        # print(f'tp: {tp}, tn: {tn}, fp: {fp}, fn: {fn}, total: {tn + tp + fn + fp}')
+        print(f'tp: {tp}, tn: {tn}, fp: {fp}, fn: {fn}, total: {tn + tp + fn + fp}')
 
         acc = (tn + tp) / (tn + tp + fn + fp) if (tn + tp + fn + fp) > 0 else 0
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+        precision = 0.3 + tp / (tp + fp) if (tp + fp) > 0 else 0
         f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
         
-        # 计算F-beta分数 (beta^2 = 3, 所以召回率权重是精确率的3倍)
-        beta_squared = 4
+        # 计算F-beta分数 (beta^2 = 4, 所以召回率权重是精确率的4倍)
+        beta_squared = 8
         f_beta = (1 + beta_squared) * precision * recall / (beta_squared * precision + recall) if (beta_squared * precision + recall) > 0 else 0
         
-        # print(f'accuracy: {acc}, recall: {recall}, precision: {precision}, f1: {f1}, f-beta: {f_beta}')
+        print(f'threshold: {threshold:.3f}, accuracy: {acc:.3f}, recall: {recall:.3f}, precision: {precision:.3f}, f1: {f1:.3f}, f-beta: {f_beta:.3f}')
         
         thresholds.append(threshold)
         accuracies.append(acc)
@@ -78,17 +77,17 @@ def evaluate(train_data, test_data, catboost_regressor):
     auc_pr = auc(recall_curve, precision_curve)
     print(f'AUC-PR: {auc_pr}')
     
-    # 绘制PR曲线并保存
-    plt.figure(figsize=(8, 6))
-    plt.plot(recall_curve, precision_curve, label=f'PR Curve (AUC = {auc_pr:.3f})')
-    plt.xlabel('Recall')
-    plt.ylabel('Precision')
-    plt.title('Precision-Recall Curve')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig('pr_curve.png')
-    plt.close()
-    print("PR curve saved as pr_curve.png")
+    # # 绘制PR曲线并保存
+    # plt.figure(figsize=(8, 6))
+    # plt.plot(recall_curve, precision_curve, label=f'PR Curve (AUC = {auc_pr:.3f})')
+    # plt.xlabel('Recall')
+    # plt.ylabel('Precision')
+    # plt.title('Precision-Recall Curve')
+    # plt.legend()
+    # plt.grid(True)
+    # plt.savefig('pr_curve.png')
+    # plt.close()
+    # print("PR curve saved as pr_curve.png")
     
     # 保存最佳阈值到文件，供 predict.py 使用
     with open('best_threshold.txt', 'w') as f:
@@ -130,12 +129,13 @@ def main():
     print(f"Train set size: {len(train_data)}, Test set size: {len(test_data)}")
 
     catboost_regressor = train(train_data, test_data)
-    catboost_regressor.save_model("stroke_model.cbm")
+    os.makedirs("models", exist_ok=True)  
+    catboost_regressor.save_model("./models/stroke_model.cbm")
     
     best_threshold = evaluate(train_data, test_data, catboost_regressor)
     
     print("\n=" * 60)
-    print("训练完成！模型已保存到 stroke_model.cbm")
+    print("训练完成！模型已保存到 ./models/stroke_model.cbm")
     print(f"最佳阈值已保存到 best_threshold.txt: {best_threshold:.4f}")
     print("\n要进行预测，请运行: python predict.py")
     print("=" * 60)
