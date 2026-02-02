@@ -53,7 +53,7 @@ def evaluate(train_data, test_data, catboost_regressor):
         f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
         
         # 计算F-beta分数 (beta^2 = 4, 所以召回率权重是精确率的4倍)
-        beta_squared = 8
+        beta_squared = 9
         f_beta = (1 + beta_squared) * precision * recall / (beta_squared * precision + recall) if (beta_squared * precision + recall) > 0 else 0
         
         print(f'threshold: {threshold:.3f}, accuracy: {acc:.3f}, recall: {recall:.3f}, precision: {precision:.3f}, f1: {f1:.3f}, f-beta: {f_beta:.3f}')

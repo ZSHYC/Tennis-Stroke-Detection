@@ -3,8 +3,8 @@ import numpy as np
 import os
 
 # 配置
-PREV_WINDOW_NUM = 2
-AFTER_WINDOW_NUM = 2
+PREV_WINDOW_NUM = 3
+AFTER_WINDOW_NUM = 3
 
 def get_feature_cols(prev_window_num=PREV_WINDOW_NUM, after_window_num=AFTER_WINDOW_NUM):
     # 为了匹配 stroke_predictor.py 的 24 维特征顺序
@@ -145,7 +145,7 @@ def load_data(file_path, shuffle=True):
         return pd.DataFrame()
 
     # 6. 添加权重
-    resdf = __add_weight(resdf, {1: 20, 0: 1})
+    resdf = __add_weight(resdf, {1: 40, 0: 1})
     
     if shuffle:
         resdf = resdf.sample(frac=1, random_state=42).reset_index(drop=True)
