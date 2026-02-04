@@ -1,7 +1,7 @@
 import catboost as ctb
 import numpy as np
 
-FEATURE_WINDOW_NUM = 5
+FEATURE_WINDOW_NUM = 7
 _EPS = 1e-15
 
 
@@ -15,7 +15,8 @@ def build_features_from_points(points):
     
     positions = [tuple(p) for p in points]
     
-    current = positions[2]
+    # 当前点应为窗口中间的点，保证与 `stroke_model.to_features` 的 zero 对齐
+    current = positions[FEATURE_WINDOW_NUM // 2]
     
     x_diff_features = []
     y_diff_features = []
@@ -79,7 +80,15 @@ class StrokePredictor:
 if __name__ == "__main__":
     import os
     path_model = os.path.join(os.path.dirname(__file__), "models", "stroke_model.cbm")
-    data = [[661.0000244140625, 380.9333190917969], [661.8333557128906, 381.6333160400391], [662.6666870117188, 382.3333129882813], [666.0, 368.3333435058594], [669.3333333333334, 357.3333435058594]]
+    data = [
+        [754.3333740234375, 164.66667175292997],
+        [756.6666259765625, 168.3333282470703],
+        [758.3333740234375, 172.66667175292997],
+        [760.3333129882812, 174.3333282470703],
+        [761.3333129882812, 168.3333282470703],
+        [762.3333129882812, 163.3333282470703],
+        [763.3333740234375, 159.3333282470703],
+    ]
     predictor = StrokePredictor(path_model)
     features = build_features_from_points(data)
     if hasattr(predictor.model, "get_feature_count"):
